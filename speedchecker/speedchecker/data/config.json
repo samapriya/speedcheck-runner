@@ -1,0 +1,8 @@
+{
+  "autoTestEnabled": true,
+  "autoTestInterval": 86400,
+  "autoTestProvider": "both",
+  "runBothTests": true,
+  "delayBetweenTests": 300,
+  "nextScheduledTest": 1743317730.629316
+}

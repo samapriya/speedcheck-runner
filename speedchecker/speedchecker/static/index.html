@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speedcheck tester</title>
+    <style>
+        :root {
+            --bg-color: #fff;
+            --text-color: #333;
+            --card-bg: #f5f5f5;
+            --border-color: #ddd;
+            --primary-color: #0066cc; /* OST Download */
+            --secondary-color: #4CAF50; /* SS Download */
+            --tertiary-color: #ff9800;  /* OST Upload (Orange) */
+            --quaternary-color: #9c27b0; /* SS Upload (Purple) */
+            --error-color: #f44336;
+            --warning-color: #ff9800; /* For mock data notice */
+            --header-bg: #333;
+            --header-text: #fff;
+            --chart-grid: #eee;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --danger-color: #dc3545; /* Clear button */
+            --danger-hover-color: #c82333;
+        }
+
+        .dark-mode {
+            --bg-color: #121212;
+            --text-color: #eee;
+            --card-bg: #1e1e1e;
+            --border-color: #333;
+            --primary-color: #4d8edb;   /* OST Download */
+            --secondary-color: #81c784; /* SS Download */
+            --tertiary-color: #ffb74d;  /* OST Upload (Light Orange) */
+            --quaternary-color: #ba68c8; /* SS Upload (Light Purple) */
+            --error-color: #e57373;
+            --warning-color: #ffb74d; /* For mock data notice */
+            --header-bg: #000;
+            --header-text: #fff;
+            --chart-grid: #333;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --danger-color: #e57373; /* Clear button */
+            --danger-hover-color: #f44336;
+        }
+
+        /* Basic Styles */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: var(--bg-color); color: var(--text-color); transition: background-color 0.3s, color 0.3s; }
+        header { background-color: var(--header-bg); color: var(--header-text); padding: 1rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px var(--shadow-color); }
+        .logo { font-size: 1.5rem; font-weight: bold; display: flex; align-items: center; gap: 10px; }
+        .logo svg { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.5; flex-shrink: 0; }
+        .controls { display: flex; gap: 1rem; align-items: center; }
+        .theme-toggle { display: flex; align-items: center; cursor: pointer; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        .card { background-color: var(--card-bg); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px var(--shadow-color); border: 1px solid var(--border-color); }
+        h2 { margin-top: 0; color: var(--primary-color); border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+
+        /* Test Section */
+        .test-options { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+        button { background-color: var(--primary-color); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background-color 0.3s; }
+        button:hover:not(:disabled) { opacity: 0.9; }
+        button:disabled { background-color: var(--border-color); cursor: not-allowed; color: var(--text-color); opacity: 0.6; }
+        button.secondary { background-color: var(--secondary-color); }
+        button.danger { background-color: var(--danger-color); }
+        button.danger:hover:not(:disabled) { background-color: var(--danger-hover-color); opacity: 1; }
+        .status { margin: 1rem 0; font-style: italic; min-height: 1.2em; }
+        .results { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .result-item { background-color: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 1rem; display: flex; flex-direction: column; align-items: center; }
+        .result-value { font-size: 2.5rem; font-weight: bold; color: var(--primary-color); margin: 0.5rem 0; }
+        .result-label { font-size: 0.9rem; color: var(--text-color); opacity: 0.8; }
+        .result-unit { font-size: 1rem; color: var(--text-color); opacity: 0.6; }
+
+        /* History Section */
+        .history-title { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+        .filter-controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+        .filter-controls label { font-weight: bold; font-size: 0.9em; margin-left: 5px; /* Add slight margin between controls */ }
+        .filter-controls label:first-child { margin-left: 0; } /* No margin for the first label */
+        .filter-controls input[type="date"],
+        .filter-controls input[type="text"],
+        .filter-controls select { /* Apply style to select too */
+            padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-color); color: var(--text-color); font-size: 0.9em;
+        }
+        .filter-controls input[type="text"] { min-width: 150px; }
+        .filter-controls select { max-width: 200px; } /* Limit width of timezone dropdown */
+        .filter-controls button { padding: 6px 12px; font-size: 0.9em; }
+        .export-clear-controls { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
+        .export-btn { margin-left: 0; background-color: var(--secondary-color); }
+
+        /* Table Styles */
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; table-layout: fixed; word-wrap: break-word; }
+        col.col-datetime { width: 240px; } /* Slightly wider for TZ */
+        col.col-provider { width: 80px; } col.col-dl { width: 100px; } col.col-ul { width: 100px; } col.col-ping { width: 80px; } col.col-jitter { width: 80px; } col.col-isp { width: auto; } col.col-server { width: auto; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { font-weight: bold; background-color: var(--card-bg); }
+        tr:nth-child(even) { background-color: var(--bg-color); }
+        tr:hover { background-color: var(--card-bg); }
+
+        /* Chart Styles */
+        .chart-container { height: 300px; margin-top: 1rem; position: relative; }
+
+        /* Utility Styles */
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255, 255, 255, 0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; margin-right: 10px; vertical-align: middle; }
+        body:not(.dark-mode) .loading { border: 3px solid rgba(0, 0, 0, 0.2); border-top-color: var(--text-color); }
+        .provider-label { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 8px; font-weight: normal; vertical-align: middle; }
+        .provider-openspeedtest { background-color: #58a6ff; color: white; }
+        .provider-speedsmart { background-color: #ff6b6b; color: white; }
+        #noDataMessage { text-align: center; padding: 3rem; color: var(--text-color); opacity: 0.7; }
+        .error-message { color: var(--error-color); font-weight: bold; }
+        .warning-message { color: var(--warning-color); font-weight: bold; }
+
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="logo">
+             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M12 8.5V12.5M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/> <path d="M16 16.5L17.5 17.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/> <path d="M8 16.5L6.5 17.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/> <path d="M19.5 12L21 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/> <path d="M4.5 12L3 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/> <path d="M16 7.5L17.5 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/> <path d="M8 7.5L6.5 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/> </svg>
+            Speedcheck tester <span id="connectionMode" class="warning-message" style="font-size: 0.8em; margin-left: 10px; display: none;">(Mock Data Mode)</span>
+        </div>
+        <div class="controls">
+            <div class="theme-toggle" id="themeToggle">
+                <svg id="lightIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"> <circle cx="12" cy="12" r="5"></circle> <line x1="12" y1="1" x2="12" y2="3"></line> <line x1="12" y1="21" x2="12" y2="23"></line> <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line> <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line> <line x1="1" y1="12" x2="3" y2="12"></line> <line x1="21" y1="12" x2="23" y2="12"></line> <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line> <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line> </svg>
+                <svg id="darkIcon" style="display: none;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"> <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path> </svg>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Test Card (Unchanged) -->
+        <div class="card">
+            <h2>Run Speedtest</h2>
+            <div class="test-options"> <button id="openspeedtest" class="secondary">OpenSpeedTest</button> <button id="speedsmart" class="secondary">SpeedSmart</button> </div>
+            <div id="status" class="status">Initializing...</div>
+            <div class="results" id="currentResults" style="display: none;">
+                <div class="result-item"> <span class="result-label">Download</span> <div class="result-value" id="downloadValue">0</div> <span class="result-unit">Mbps</span> </div>
+                <div class="result-item"> <span class="result-label">Upload</span> <div class="result-value" id="uploadValue">0</div> <span class="result-unit">Mbps</span> </div>
+                <div class="result-item"> <span class="result-label">Ping</span> <div class="result-value" id="pingValue">0</div> <span class="result-unit">ms</span> </div>
+                <div class="result-item"> <span class="result-label">Jitter</span> <div class="result-value" id="jitterValue">0</div> <span class="result-unit">ms</span> </div>
+            </div>
+            <div id="serverInfo" style="display: none; margin-top: 1rem;">
+                <div><strong>ISP:</strong> <span id="ispValue">-</span></div>
+                <div><strong>Server:</strong> <span id="serverValue">-</span></div>
+            </div>
+        </div>
+
+        <!-- History Card (Modified Filters) -->
+        <div class="card">
+            <div class="history-title">
+                <h2>Test History</h2>
+                <div class="filter-controls">
+                     <label for="filterStartDate">From:</label> <input type="date" id="filterStartDate" name="filterStartDate">
+                     <label for="filterEndDate">To:</label> <input type="date" id="filterEndDate" name="filterEndDate">
+                     <label for="filterServer">Server:</label> <input type="text" id="filterServer" name="filterServer" placeholder="Enter server name...">
+                     <!-- === TIMEZONE SELECTOR ADDED HERE === -->
+                     <label for="timezoneSelect">Timezone:</label>
+                     <select id="timezoneSelect" name="timezoneSelect">
+                         <!-- Options populated by JS -->
+                     </select>
+                     <button id="clearFiltersBtn" class="secondary">Clear Filters</button>
+                </div>
+                <div class="export-clear-controls">
+                    <button id="exportCsv" class="export-btn" disabled>Export CSV</button>
+                    <button id="exportJson" class="export-btn" disabled>Export JSON</button>
+                    <button id="clearHistoryBtn" class="danger" disabled>Clear History</button>
+                </div>
+            </div>
+            <div id="historyContainer">
+                <div id="noDataMessage">Loading history...</div>
+                 <table id="historyTable" style="display: none;">
+                    <colgroup>
+                        <col class="col-datetime"> <col class="col-provider"> <col class="col-dl">
+                        <col class="col-ul"> <col class="col-ping"> <col class="col-jitter">
+                        <col class="col-isp"> <col class="col-server">
+                    </colgroup>
+                    <thead> <tr> <th>Date & Time</th> <th>Provider</th> <th>Download (Mbps)</th> <th>Upload (Mbps)</th> <th>Ping (ms)</th> <th>Jitter (ms)</th> <th>ISP</th> <th>Server</th> </tr> </thead>
+                    <tbody id="historyBody"> </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Chart Cards (Unchanged) -->
+        <div class="card">
+            <h2>Download Speed History</h2>
+            <div class="chart-container"> <canvas id="downloadChart"></canvas> </div>
+        </div>
+        <div class="card">
+            <h2>Upload Speed History</h2>
+            <div class="chart-container"> <canvas id="uploadChart"></canvas> </div>
+        </div>
+    </div>
+
+    <!-- Include Chart.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <!-- Include a date adapter for Chart.js time scale -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+    <!-- === COMPLETE UPDATED SCRIPT BLOCK === -->
+    <script>
+        // --- Mock Data ---
+        let mockTestHistorySource = [
+            { timestamp: "2023-10-25T10:00:00Z", provider: "openspeedtest", download: 150.5, upload: 45.2, ping: 12.1, jitter: 1.5, isp: "Mock ISP 1", server: "Mock Server A (City X)" },
+            { timestamp: "2023-10-25T10:05:00Z", provider: "speedsmart", download: 145.8, upload: 48.9, ping: 15.0, jitter: 2.1, isp: "Mock ISP 1", server: "Mock Server B (City Y)" },
+            { timestamp: "2023-10-26T08:30:00Z", provider: "openspeedtest", download: 320.1, upload: 95.6, ping: 8.5, jitter: 0.8, isp: "Mock ISP 2 (Fiber)", server: "Mock Server C (City Z)" },
+            { timestamp: "2023-10-26T14:15:00Z", provider: "speedsmart", download: 310.3, upload: 92.1, ping: 10.2, jitter: 1.1, isp: "Mock ISP 2 (Fiber)", server: "Mock Server C (City Z)" },
+            { timestamp: "2023-10-27T09:00:00Z", provider: "openspeedtest", download: 95.2, upload: 18.5, ping: 25.3, jitter: 4.5, isp: "Mock ISP 3", server: "Mock Server D (Remote)" },
+        ];
+
+        // --- Global State ---
+        let isBackendConnected = false;
+        let connectionModeSpan;
+        let selectedTimeZone = undefined; // Will be set to detected local TZ initially
+        let timezoneSelectElement; // Reference to the dropdown
+
+        // --- Curated Timezone List ---
+        const commonTimezones = [
+            "UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+            "Europe/London", "Europe/Paris", "Europe/Moscow", "Asia/Tokyo", "Asia/Shanghai",
+            "Asia/Dubai", "Australia/Sydney", "Pacific/Auckland",
+        ];
+
+        // --- Scope variables ---
+        let themeToggle, lightIcon, darkIcon;
+        let openSpeedTestBtn, speedSmartBtn, statusElement, currentResultsElement, serverInfoElement;
+        let downloadValue, uploadValue, pingValue, jitterValue, ispValue, serverValue;
+        let historyTable, historyBody, noDataMessage, exportCsvBtn, exportJsonBtn, clearHistoryBtn;
+        let downloadChart, uploadChart;
+        let filterStartDateInput, filterEndDateInput, filterServerInput, clearFiltersBtn;
+        let testHistory = [];
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            assignElements();
+            populateTimezoneDropdown(); // Populate the dropdown
+            setupTheme();
+            initCharts();
+            await fetchHistory();
+            setupEventListeners();
+            updateButtonStates();
+        });
+
+        function assignElements() {
+            connectionModeSpan = document.getElementById('connectionMode');
+            themeToggle = document.getElementById('themeToggle'); lightIcon = document.getElementById('lightIcon'); darkIcon = document.getElementById('darkIcon');
+            openSpeedTestBtn = document.getElementById('openspeedtest'); speedSmartBtn = document.getElementById('speedsmart'); statusElement = document.getElementById('status'); currentResultsElement = document.getElementById('currentResults'); serverInfoElement = document.getElementById('serverInfo');
+            downloadValue = document.getElementById('downloadValue'); uploadValue = document.getElementById('uploadValue'); pingValue = document.getElementById('pingValue'); jitterValue = document.getElementById('jitterValue'); ispValue = document.getElementById('ispValue'); serverValue = document.getElementById('serverValue');
+            historyTable = document.getElementById('historyTable'); historyBody = document.getElementById('historyBody'); noDataMessage = document.getElementById('noDataMessage'); exportCsvBtn = document.getElementById('exportCsv'); exportJsonBtn = document.getElementById('exportJson'); clearHistoryBtn = document.getElementById('clearHistoryBtn');
+            filterStartDateInput = document.getElementById('filterStartDate'); filterEndDateInput = document.getElementById('filterEndDate'); filterServerInput = document.getElementById('filterServer'); clearFiltersBtn = document.getElementById('clearFiltersBtn');
+            timezoneSelectElement = document.getElementById('timezoneSelect'); // Assign timezone dropdown
+        }
+
+        function populateTimezoneDropdown() {
+            let detectedLocalTimeZone = "UTC";
+            try { detectedLocalTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { console.warn("Could not detect local timezone, defaulting to UTC.", e); }
+            const timeZoneList = [...new Set([detectedLocalTimeZone, "UTC", ...commonTimezones])].sort();
+            timezoneSelectElement.innerHTML = '';
+            timeZoneList.forEach(tz => {
+                const option = document.createElement('option'); option.value = tz; option.textContent = tz.replace(/_/g, ' '); timezoneSelectElement.appendChild(option);
+            });
+            timezoneSelectElement.value = detectedLocalTimeZone; selectedTimeZone = detectedLocalTimeZone;
+        }
+
+        function setupTheme() {
+             const savedTheme = localStorage.getItem('theme'); const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches; const useDark = savedTheme === 'dark' || (!savedTheme && prefersDark); document.body.classList.toggle('dark-mode', useDark); if(lightIcon) lightIcon.style.display = useDark ? 'none' : 'block'; if(darkIcon) darkIcon.style.display = useDark ? 'block' : 'none'; themeToggle?.addEventListener('click', () => { const isDarkNow = document.body.classList.toggle('dark-mode'); localStorage.setItem('theme', isDarkNow ? 'dark' : 'light'); if(lightIcon) lightIcon.style.display = isDarkNow ? 'none' : 'block'; if(darkIcon) darkIcon.style.display = isDarkNow ? 'block' : 'none'; updateChartsTheme(); });
+        }
+
+         function setupEventListeners() {
+            openSpeedTestBtn?.addEventListener('click', () => runTest('openspeedtest'));
+            speedSmartBtn?.addEventListener('click', () => runTest('speedsmart'));
+            exportCsvBtn?.addEventListener('click', () => exportHistory('csv'));
+            exportJsonBtn?.addEventListener('click', () => exportHistory('json'));
+            clearFiltersBtn?.addEventListener('click', () => { filterStartDateInput.value = ''; filterEndDateInput.value = ''; filterServerInput.value = ''; updateHistoryTable(); updateCharts(); });
+            clearHistoryBtn?.addEventListener('click', clearAllHistory);
+            const updateUIOnChange = () => { updateHistoryTable(); updateCharts(); };
+            filterStartDateInput?.addEventListener('change', updateUIOnChange);
+            filterEndDateInput?.addEventListener('change', updateUIOnChange);
+            filterServerInput?.addEventListener('input', updateUIOnChange);
+            timezoneSelectElement?.addEventListener('change', (event) => { selectedTimeZone = event.target.value; console.log("Timezone selected:", selectedTimeZone); updateHistoryTable(); updateCharts(); });
+        }
+
+        // --- Data Handling & Backend Interaction ---
+        async function fetchHistory() {
+            noDataMessage.textContent = 'Loading history...'; noDataMessage.style.display = 'block'; historyTable.style.display = 'none'; statusElement.textContent = "Connecting to backend...";
+            try { const response = await fetch('/api/history'); if (!response.ok) { throw new Error(`Backend error: ${response.status} ${response.statusText}`); } const data = await response.json(); console.log(`Fetched ${data.length} history records from backend.`); isBackendConnected = true; connectionModeSpan.style.display = 'none'; statusElement.textContent = "Ready."; processAndStoreHistory(data); } catch (error) { console.error("Fetch history error:", error); isBackendConnected = false; connectionModeSpan.style.display = 'inline'; statusElement.innerHTML = `<span class="warning-message">Backend connection failed. Using mock data.</span>`; loadMockData(); } finally { updateButtonStates(); updateHistoryTable(); updateCharts(); }
+        }
+        function loadMockData() {
+            console.log("Loading mock data..."); try { const historyData = typeof structuredClone === 'function' ? structuredClone(mockTestHistorySource) : JSON.parse(JSON.stringify(mockTestHistorySource)); processAndStoreHistory(historyData); console.log(`Loaded ${testHistory.length} mock history records.`); } catch (error) { console.error("Mock data processing error:", error); testHistory = []; noDataMessage.textContent = 'Failed to process mock data.'; }
+        }
+        function processAndStoreHistory(data) {
+             data.forEach(t => { t.timestamp = t.timestamp || null; t.download = parseFloat(t.download) || 0; t.upload = parseFloat(t.upload) || 0; t.ping = parseFloat(t.ping) || 0; t.jitter = parseFloat(t.jitter) || 0; if(t.timestamp && !t.date) { try { t.date = new Date(t.timestamp).toLocaleString(); } catch(e){} } });
+             data.sort((a, b) => { if (!a.timestamp && !b.timestamp) return 0; if (!a.timestamp) return 1; if (!b.timestamp) return -1; const dateA = new Date(a.timestamp); const dateB = new Date(b.timestamp); if (isNaN(dateA.getTime())) return 1; if (isNaN(dateB.getTime())) return -1; return dateB - dateA; });
+             testHistory = data;
+        }
+        async function runTest(provider) {
+            openSpeedTestBtn.disabled = true; speedSmartBtn.disabled = true; currentResultsElement.style.display = 'none'; serverInfoElement.style.display = 'none';
+            if (isBackendConnected) {
+                statusElement.innerHTML = `<span class="loading"></span> Running test via backend (${provider})...`; try { const response = await fetch(`/api/speedtest?provider=${provider}`, { method: 'POST' }); if (!response.ok) { let errorMsg = `Backend error: ${response.status}`; try { const errData = await response.json(); errorMsg += ` - ${errData.error || JSON.stringify(errData)}`; } catch(e) {} throw new Error(errorMsg); } const data = await response.json(); if (data.error) { throw new Error(`Backend test error: ${data.error} ${data.output ? JSON.stringify(data.output):''}`); } console.log("Backend test result:", data); displayResults(data, provider); await fetchHistory(); statusElement.textContent = 'Test completed.'; } catch (error) { console.error(`Run test error (${provider}):`, error); statusElement.innerHTML = `<span class="error-message">Failed: ${error.message}</span>`; if (error instanceof TypeError) { console.warn("Connection likely lost. Switching to mock mode."); isBackendConnected = false; connectionModeSpan.style.display = 'inline'; updateButtonStates(); } } finally { updateButtonStates(); }
+            } else {
+                statusElement.innerHTML = `<span class="loading"></span> Running mock test (${provider})...`; setTimeout(() => { try { const now = new Date(); const mockResult = { timestamp: now.toISOString(), provider: provider, download: (Math.random() * 400 + 50), upload: (Math.random() * 80 + 10), ping: (Math.random() * 45 + 5), jitter: (Math.random() * 9 + 1), isp: "Your ISP (Mock)", server: `Mock Server ${String.fromCharCode(65 + Math.floor(Math.random() * 5))} (City ${String.fromCharCode(88 + Math.floor(Math.random() * 3))})` }; testHistory.unshift(mockResult); mockTestHistorySource.unshift(mockResult); let displayData = {}; if (provider === 'openspeedtest') { displayData = { 'Download Speed': `${mockResult.download.toFixed(2)} Mbps`, 'Upload Speed': `${mockResult.upload.toFixed(2)} Mbps`, 'Ping': `${mockResult.ping.toFixed(1)} ms`, 'Jitter': `${mockResult.jitter.toFixed(2)} ms`, 'Server Location': mockResult.isp, 'Server Name': mockResult.server }; } else { displayData = { download_speed: mockResult.download, upload_speed: mockResult.upload, ping_speed: mockResult.ping, jitter: mockResult.jitter, isp_name: mockResult.isp, server_name: mockResult.server }; } displayResults(displayData, provider); updateHistoryTable(); updateCharts(); statusElement.textContent = 'Mock test completed.'; updateButtonStates(); } catch (error) { console.error(`Mock run test error (${provider}):`, error); statusElement.innerHTML = `<span class="error-message">Mock Failed: ${error.message}</span>`; } finally { updateButtonStates(); } }, 1500);
+            }
+        }
+        async function clearAllHistory() {
+            if (!isBackendConnected) { alert("Cannot clear history while disconnected from the backend."); return; } if (confirm('Are you sure you want to delete ALL test history from the server? This cannot be undone.')) { statusElement.innerHTML = `<span class="loading"></span> Clearing history on server...`; clearHistoryBtn.disabled = true; try { const response = await fetch('/api/history', { method: 'DELETE' }); if (!response.ok) { let errorMsg = `Failed to clear history: ${response.status}`; try { const errData = await response.json(); errorMsg += ` - ${errData.error || JSON.stringify(errData)}`; } catch(e) {} throw new Error(errorMsg); } const result = await response.json(); console.log("Clear history result:", result.message); statusElement.textContent = "History cleared successfully."; testHistory = []; updateHistoryTable(); updateCharts(); updateButtonStates(); } catch (error) { console.error("Clear history error:", error); statusElement.innerHTML = `<span class="error-message">Error clearing history: ${error.message}</span>`; if (error instanceof TypeError) { isBackendConnected = false; connectionModeSpan.style.display = 'inline'; updateButtonStates(); } } finally { if(isBackendConnected) { clearHistoryBtn.disabled = false; } } }
+        }
+        function updateButtonStates() {
+            openSpeedTestBtn.disabled = false; speedSmartBtn.disabled = false; clearHistoryBtn.disabled = !isBackendConnected; const hasData = testHistory.length > 0; exportCsvBtn.disabled = !hasData; exportJsonBtn.disabled = !hasData;
+        }
+        function displayResults(data, provider) {
+             currentResultsElement.style.display = 'grid'; serverInfoElement.style.display = 'block'; try { if (provider === 'openspeedtest') { downloadValue.textContent = parseFloat(data['Download Speed']?.split(' ')[0] || 0).toFixed(2); uploadValue.textContent = parseFloat(data['Upload Speed']?.split(' ')[0] || 0).toFixed(2); pingValue.textContent = parseFloat(data['Ping']?.split(' ')[0] || 0).toFixed(1); jitterValue.textContent = parseFloat(data['Jitter']?.split(' ')[0] || 0).toFixed(2); ispValue.textContent = data['Server Location'] || '-'; serverValue.textContent = data['Server Name'] || '-'; } else { downloadValue.textContent = (data.download_speed || 0).toFixed(2); uploadValue.textContent = (data.upload_speed || 0).toFixed(2); pingValue.textContent = parseFloat(data.ping_speed || 0).toFixed(1); jitterValue.textContent = (data.jitter || 0).toFixed(2); ispValue.textContent = data.isp_name || '-'; serverValue.textContent = data.server_name || '-'; } } catch (e) { console.error("Display results parse error:", e, data); statusElement.innerHTML += `<br/><span class="error-message">Result display error.</span>`; currentResultsElement.style.display = 'none'; serverInfoElement.style.display = 'none'; }
+        }
+        function getFilteredHistory() {
+            const start = filterStartDateInput.value; const end = filterEndDateInput.value; const server = filterServerInput.value.trim().toLowerCase(); const endDateTime = end ? new Date(end) : null; if (endDateTime) { endDateTime.setHours(23, 59, 59, 999); } return testHistory.filter(t => { if (!t.timestamp) return false; let itemDate; try { itemDate = new Date(t.timestamp); if (isNaN(itemDate.getTime())) return false; } catch (e) { return false; } const dateOk = (!start || itemDate >= new Date(start)) && (!endDateTime || itemDate <= endDateTime); const serverOk = !server || (t.server || '').toLowerCase().includes(server); return dateOk && serverOk; });
+        }
+        function updateHistoryTable() {
+            const filtered = getFilteredHistory(); const hasData = filtered.length > 0; historyTable.style.display = hasData ? 'table' : 'none'; noDataMessage.style.display = hasData ? 'none' : 'block'; noDataMessage.textContent = testHistory.length === 0 ? (isBackendConnected ? 'No tests run yet.' : 'No mock data available.') : 'No results match filters.'; historyBody.innerHTML = '';
+            const currentTZ = selectedTimeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; let dateFormatter; try { dateFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: false, timeZone: currentTZ, timeZoneName: 'short' }); } catch (e) { console.error(`Invalid timezone "${currentTZ}". Falling back to UTC.`, e); dateFormatter = new Intl.DateTimeFormat(undefined, { /*...*/ timeZone: "UTC", timeZoneName: 'short'}); }
+            filtered.forEach(t => { const row = historyBody.insertRow(); const prov = t.provider === 'openspeedtest' ? 'OST' : 'SS'; let formattedDate = '-'; if (t.timestamp) { try { const dateObj = new Date(t.timestamp); if (!isNaN(dateObj.getTime())) { formattedDate = dateFormatter.format(dateObj); } else { formattedDate = 'Invalid Date'; } } catch (e) { console.error("Error formatting date:", t.timestamp, e); formattedDate = 'Formatting Error'; } } row.innerHTML = `<td>${formattedDate}</td> <td><span class="provider-label provider-${t.provider}">${prov}</span></td> <td>${(t.download || 0).toFixed(2)}</td> <td>${(t.upload || 0).toFixed(2)}</td> <td>${parseFloat(t.ping || 0).toFixed(1)}</td> <td>${(t.jitter || 0).toFixed(2)}</td> <td>${t.isp || '-'}</td> <td>${t.server || '-'}</td>`; });
+             updateButtonStates();
+        }
+
+        // --- Chart Logic ---
+        function getBaseChartOptions(colors) {
+             const currentTZ = selectedTimeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; return { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top', labels:{ color: colors.textColor } }, tooltip: { mode: 'index', intersect: false, callbacks: { title: function(tooltipItems) { const date = tooltipItems[0]?.parsed?.x; if (date) { try { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium', timeZone: currentTZ }).format(new Date(date)); } catch (e) { return new Date(date).toLocaleString(); } } return ''; } } } }, scales: { x: { type: 'time', time: { tooltipFormat: 'PPpp', unit: 'day', displayFormats: { millisecond: 'HH:mm:ss.SSS', second: 'HH:mm:ss', minute: 'HH:mm', hour: 'HH:mm', day: 'MMM d', week: 'MMM d', month: 'MMM yyyy', quarter: 'qqq yyyy', year: 'yyyy' } }, grid: { color: colors.gridColor }, ticks: { color: colors.textColor, maxRotation: 70, minRotation: 45, autoSkip: true, maxTicksLimit: 20, source: 'auto' } }, y: { beginAtZero: true, grid: { color: colors.gridColor }, ticks: { color: colors.textColor } } } };
+        }
+        function initCharts() {
+            const dCtx = document.getElementById('downloadChart')?.getContext('2d'); const uCtx = document.getElementById('uploadChart')?.getContext('2d'); if (!dCtx || !uCtx) { console.error("Canvas context not found"); return; } const colors = getChartColors(); const opts = getBaseChartOptions(colors); if (downloadChart) downloadChart.destroy(); if (uploadChart) uploadChart.destroy(); downloadChart = new Chart(dCtx, { type: 'line', data: { datasets: [ { label: 'OST Down (Mbps)', data: [], borderColor: colors.ostDownload, backgroundColor: colors.ostDownloadAlpha, tension: 0.1, fill: false, pointRadius: 3, spanGaps: false }, { label: 'SS Down (Mbps)', data: [], borderColor: colors.ssDownload, backgroundColor: colors.ssDownloadAlpha, tension: 0.1, fill: false, pointRadius: 3, spanGaps: false } ] }, options: opts }); uploadChart = new Chart(uCtx, { type: 'line', data: { datasets: [ { label: 'OST Up (Mbps)', data: [], borderColor: colors.ostUpload, backgroundColor: colors.ostUploadAlpha, tension: 0.1, fill: false, pointRadius: 3, spanGaps: false }, { label: 'SS Up (Mbps)', data: [], borderColor: colors.ssUpload, backgroundColor: colors.ssUploadAlpha, tension: 0.1, fill: false, pointRadius: 3, spanGaps: false } ] }, options: opts });
+        }
+        function processChartData() {
+            const filtered = getFilteredHistory(); const ostD = [], ssD = [], ostU = [], ssU = []; const sortedFiltered = filtered.slice().sort((a, b) => { if (!a.timestamp && !b.timestamp) return 0; if (!a.timestamp) return -1; if (!b.timestamp) return 1; const dateA = new Date(a.timestamp); const dateB = new Date(b.timestamp); if (isNaN(dateA.getTime())) return -1; if (isNaN(dateB.getTime())) return 1; return dateA - dateB; }); sortedFiltered.forEach(t => { if (!t.timestamp) return; let ts; try { ts = new Date(t.timestamp); if (isNaN(ts.getTime())) return; } catch (e) { return; } if (t.provider === 'openspeedtest') { ostD.push({ x: ts, y: t.download }); ostU.push({ x: ts, y: t.upload }); } else if (t.provider === 'speedsmart') { ssD.push({ x: ts, y: t.download }); ssU.push({ x: ts, y: t.upload }); } }); return { ostD, ssD, ostU, ssU };
+        }
+        function updateCharts() {
+             if (!downloadChart || !uploadChart) { initCharts(); if (!downloadChart || !uploadChart) return; } const chartData = processChartData(); downloadChart.data.datasets[0].data = chartData.ostD; downloadChart.data.datasets[1].data = chartData.ssD; uploadChart.data.datasets[0].data = chartData.ostU; uploadChart.data.datasets[1].data = chartData.ssU; const colors = getChartColors(); downloadChart.options = getBaseChartOptions(colors); uploadChart.options = getBaseChartOptions(colors); downloadChart.update(); uploadChart.update();
+        }
+        function getChartColors() {
+            const style = getComputedStyle(document.documentElement); const get = (v, f) => style.getPropertyValue(v).trim() || f; const dark = document.body.classList.contains('dark-mode'); const colors = { ostDownload: get('--primary-color', dark ? '#4d8edb' : '#0066cc'), ssDownload: get('--secondary-color', dark ? '#81c784' : '#4CAF50'), ostUpload: get('--tertiary-color', dark ? '#ffb74d' : '#ff9800'), ssUpload: get('--quaternary-color', dark ? '#ba68c8' : '#9c27b0'), textColor: get('--text-color', dark ? '#eee' : '#333'), gridColor: get('--chart-grid', dark ? '#333' : '#eee') }; colors.ostDownloadAlpha = colors.ostDownload + '33'; colors.ssDownloadAlpha = colors.ssDownload + '33'; colors.ostUploadAlpha = colors.ostUpload + '33'; colors.ssUploadAlpha = colors.ssUpload + '33'; return colors;
+        }
+        function updateChartsTheme() {
+              if (!downloadChart || !uploadChart) { console.warn("Cannot update theme: Charts not initialized."); return; } const colors = getChartColors(); const newOptions = getBaseChartOptions(colors); [downloadChart, uploadChart].forEach((chart) => { chart.options.plugins.legend.labels.color = colors.textColor; chart.options.scales.x.grid.color = colors.gridColor; chart.options.scales.x.ticks.color = colors.textColor; chart.options.scales.y.grid.color = colors.gridColor; chart.options.scales.y.ticks.color = colors.textColor; chart.options.plugins.tooltip = newOptions.plugins.tooltip; }); downloadChart.data.datasets[0].borderColor = colors.ostDownload; downloadChart.data.datasets[0].backgroundColor = colors.ostDownloadAlpha; downloadChart.data.datasets[1].borderColor = colors.ssDownload; downloadChart.data.datasets[1].backgroundColor = colors.ssDownloadAlpha; uploadChart.data.datasets[0].borderColor = colors.ostUpload; uploadChart.data.datasets[0].backgroundColor = colors.ostUploadAlpha; uploadChart.data.datasets[1].borderColor = colors.ssUpload; uploadChart.data.datasets[1].backgroundColor = colors.ssUploadAlpha; downloadChart.update(); uploadChart.update();
+         }
+
+        // --- Export Logic ---
+        function exportHistory(type) {
+            const dataToExport = getFilteredHistory(); if (dataToExport.length === 0) { alert('No data matches filters to export.'); return; }
+            const currentTZ = selectedTimeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; let dateFormatter; try { dateFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: false, timeZone: currentTZ, timeZoneName: 'short' }); } catch(e) { console.error(`Invalid timezone "${currentTZ}" for export. Falling back to UTC.`, e); dateFormatter = new Intl.DateTimeFormat(undefined, { /*...*/ timeZone: "UTC", timeZoneName: 'short'}); }
+            let content, filename, mimeType; const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0]; const filtersApplied = filterStartDateInput?.value || filterEndDateInput?.value || filterServerInput?.value; const filenameSuffix = filtersApplied ? `-filtered-${timestamp}` : `-${timestamp}`; const timezoneName = currentTZ.replace(/\//g, '_');
+            if (type === 'csv') {
+                 const headers = `"Date & Time (${dateFormatter.resolvedOptions().timeZone})","Provider","Download (Mbps)","Upload (Mbps)","Ping (ms)","Jitter (ms)","ISP","Server"\n`; const rows = dataToExport.map(t => { let formattedDate = '-'; if (t.timestamp) { try { const d = new Date(t.timestamp); if(!isNaN(d.getTime())) formattedDate = dateFormatter.format(d); } catch(e){ formattedDate = 'Error'; } } const escapeCsvField = (field) => { const str = String(field ?? '-'); if (str.includes(',') || str.includes('"') || str.includes('\n')) { return `"${str.replace(/"/g, '""')}"`; } return str; }; return [ escapeCsvField(formattedDate), escapeCsvField(t.provider), (t.download || 0).toFixed(2), (t.upload || 0).toFixed(2), parseFloat(t.ping || 0).toFixed(1), (t.jitter || 0).toFixed(2), escapeCsvField(t.isp), escapeCsvField(t.server) ].join(','); }).join('\n'); content = headers + rows; filename = `speedtest-history-${timezoneName}${filenameSuffix}.csv`; mimeType = 'text/csv;charset=utf-8;';
+            } else { /* JSON */
+                const jsonData = dataToExport.map(t => { let formatted_datetime_selected_tz = null; if (t.timestamp) { try { const d = new Date(t.timestamp); if(!isNaN(d.getTime())) formatted_datetime_selected_tz = dateFormatter.format(d); } catch(e){} } return { ...t, timezone_used_for_format: currentTZ, formatted_datetime_selected_tz }; }); content = JSON.stringify(jsonData, null, 2); filename = `speedtest-history-${timezoneName}${filenameSuffix}.json`; mimeType = 'application/json;charset=utf-8;';
+            }
+            const blob = new Blob([content], { type: mimeType }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = filename; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a);
+        }
+
+    </script>
+
+</body>
+</html>

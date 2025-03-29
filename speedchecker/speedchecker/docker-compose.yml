@@ -1,0 +1,13 @@
+services:
+  speedtest-dashboard:
+    build: .
+    ports:
+      - "3667:3667"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - AUTO_TEST_ENABLED=true       # Set to 'false' to disable automatic tests
+      - AUTO_TEST_INTERVAL=3600     # Interval in seconds (86400 = daily)
+      - AUTO_TEST_PROVIDER=both      # 'openspeedtest', 'speedsmart', or 'both'
+      - DELAY_BETWEEN_TESTS=300      # Delay in seconds between tests when running both (5 minutes)
+    restart: unless-stopped
