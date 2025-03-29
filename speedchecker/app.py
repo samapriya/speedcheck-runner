@@ -20,7 +20,6 @@ AUTO_TEST_INTERVAL = os.environ.get('AUTO_TEST_INTERVAL', '86400')  # Default: d
 AUTO_TEST_PROVIDER = os.environ.get('AUTO_TEST_PROVIDER', 'both')  # Default to run both tests
 RUN_BOTH_TESTS = os.environ.get('AUTO_TEST_PROVIDER', 'both').lower() == 'both'
 DELAY_BETWEEN_TESTS = int(os.environ.get('DELAY_BETWEEN_TESTS', '300'))  # 5 minutes lag by default
-NEXT_SCHEDULED_TEST = None  # Will be set when scheduled
 
 # Data directory
 DATA_DIR = Path("/app/data")
@@ -38,8 +37,36 @@ if not HISTORY_JSON.exists():
     with open(HISTORY_JSON, "w") as f:
         json.dump([], f)
 
-# Global lock for accessing test history
+# Global lock for accessing test history and config
 history_lock = threading.Lock()
+config_lock = threading.Lock()
+
+# Track active tests for status reporting
+active_tests = {}
+active_tests_lock = threading.Lock()
+
+def register_active_test(provider, start_time=None):
+    """Register a test as active"""
+    with active_tests_lock:
+        if start_time is None:
+            start_time = datetime.now(timezone.utc)
+        active_tests[provider] = {
+            "start_time": start_time,
+            "timestamp": start_time.timestamp()
+        }
+        print(f"[{datetime.now(timezone.utc).isoformat()}] Registered active test: {provider}")
+
+def unregister_active_test(provider):
+    """Mark a test as complete"""
+    with active_tests_lock:
+        if provider in active_tests:
+            del active_tests[provider]
+            print(f"[{datetime.now(timezone.utc).isoformat()}] Unregistered test: {provider}")
+
+def get_active_tests():
+    """Get a copy of active tests"""
+    with active_tests_lock:
+        return dict(active_tests)
 
 def load_history():
     """Load test history from JSON file."""
@@ -64,44 +91,54 @@ def save_history(history):
 
 def update_history(result, provider):
     """Add a new test result to the history."""
+    # Skip if result is None or has an error
+    if result is None or (isinstance(result, dict) and "error" in result):
+        print(f"Not adding erroneous result to history: {result}")
+        return None
+        
     history = load_history()
     
     # Ensure timestamp is in UTC
     timestamp = datetime.now(timezone.utc).isoformat()
     
-    if provider == "openspeedtest":
-        # Extract values from the OpenSpeedTest result format
-        download = float(result["Download Speed"].split()[0])
-        upload = float(result["Upload Speed"].split()[0])
-        ping = float(result["Ping"].split()[0])
-        jitter = float(result["Jitter"].split()[0])
-        isp = result["Server Location"]
-        server = result["Server Name"]
-    else:  # speedsmart
-        # Use SpeedSmart result format
-        download = result["download_speed"]
-        upload = result["upload_speed"]
-        ping = result["ping_speed"]
-        jitter = result["jitter"]
-        isp = result["isp_name"]
-        server = result["server_name"]
-    
-    entry = {
-        "timestamp": timestamp,
-        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        "provider": provider,
-        "download": download,
-        "upload": upload,
-        "ping": ping,
-        "jitter": jitter,
-        "isp": isp,
-        "server": server
-    }
-    
-    history.append(entry)
-    save_history(history)
-    
-    return entry
+    try:
+        if provider == "openspeedtest":
+            # Extract values from the OpenSpeedTest result format
+            download = float(result["Download Speed"].split()[0])
+            upload = float(result["Upload Speed"].split()[0])
+            ping = float(result["Ping"].split()[0])
+            jitter = float(result["Jitter"].split()[0])
+            isp = result["Server Location"]
+            server = result["Server Name"]
+        else:  # speedsmart
+            # Use SpeedSmart result format
+            download = result["download_speed"]
+            upload = result["upload_speed"]
+            ping = result["ping_speed"]
+            jitter = result["jitter"]
+            isp = result["isp_name"]
+            server = result["server_name"]
+        
+        entry = {
+            "timestamp": timestamp,
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "provider": provider,
+            "download": download,
+            "upload": upload,
+            "ping": ping,
+            "jitter": jitter,
+            "isp": isp,
+            "server": server
+        }
+        
+        history.append(entry)
+        save_history(history)
+        
+        return entry
+    except (KeyError, ValueError, TypeError) as e:
+        print(f"Error updating history with result from {provider}: {e}")
+        print(f"Problematic result: {result}")
+        return None
 
 @app.route('/')
 def index():
@@ -127,60 +164,16 @@ def run_speedtest():
     """API endpoint to run a speed test."""
     provider = request.args.get('provider', 'openspeedtest')
     
-    # Function to capture stdout during test run
-    def run_test_with_capture():
-        import io
-        import sys
-        from contextlib import redirect_stdout
-        
-        # Try up to 3 times
-        for attempt in range(3):
-            try:
-                f = io.StringIO()
-                with redirect_stdout(f):
-                    if provider == "openspeedtest":
-                        openspeedtest_speed_test()
-                    else:
-                        speedsmart_speed_test()
-                
-                output = f.getvalue()
-                
-                # Try to extract JSON from the output
-                json_start = output.find('{')
-                json_end = output.rfind('}') + 1
-                if json_start >= 0 and json_end > json_start:
-                    json_str = output[json_start:json_end]
-                    return json.loads(json_str)
-                else:
-                    if attempt < 2:  # If not the last attempt
-                        print(f"No JSON found in output, retrying (attempt {attempt+1})")
-                        time.sleep(2)  # Wait before retry
-                        continue
-                    return {"error": "No JSON found in output"}
-                    
-            except json.JSONDecodeError:
-                if attempt < 2:  # If not the last attempt
-                    print(f"Failed to parse JSON from output, retrying (attempt {attempt+1})")
-                    time.sleep(2)  # Wait before retry
-                    continue
-                return {"error": "Failed to parse JSON from output", "output": output}
-            except Exception as e:
-                if attempt < 2:  # If not the last attempt
-                    print(f"Error during test: {str(e)}, retrying (attempt {attempt+1})")
-                    time.sleep(2)  # Wait before retry
-                    continue
-                return {"error": f"Test failed: {str(e)}"}
-        
-        # If we get here, all attempts failed
-        return {"error": "All retry attempts failed"}
+    # Register this test as active
+    register_active_test(provider)
     
-    # Run the test
-    result = run_test_with_capture()
-    
-    # Update history
-    update_history(result, provider)
-    
-    return jsonify(result)
+    try:
+        # Run the test directly
+        result = run_specific_test(provider)
+        return jsonify(result)
+    finally:
+        # Always unregister the test
+        unregister_active_test(provider)
 
 @app.route('/api/history')
 def get_history():
@@ -270,35 +263,11 @@ def check_permissions():
     
     return jsonify(results)
 
-# Function to run scheduled speed test
-def run_scheduled_speedtest():
-    global NEXT_SCHEDULED_TEST
-    
-    if RUN_BOTH_TESTS:
-        print(f"Running scheduled speedtest for both providers with {DELAY_BETWEEN_TESTS} seconds delay")
-        
-        # Run OpenSpeedTest first
-        print("Running OpenSpeedTest...")
-        run_specific_test("openspeedtest")
-        
-        # Wait for specified delay
-        print(f"Waiting {DELAY_BETWEEN_TESTS} seconds before running SpeedSmart...")
-        time.sleep(DELAY_BETWEEN_TESTS)
-        
-        # Run SpeedSmart next
-        print("Running SpeedSmart...")
-        run_specific_test("speedsmart")
-    else:
-        print(f"Running scheduled speedtest using {AUTO_TEST_PROVIDER} provider")
-        run_specific_test(AUTO_TEST_PROVIDER)
-    
-    # Update next scheduled time
-    if AUTO_TEST_ENABLED:
-        NEXT_SCHEDULED_TEST = datetime.now(timezone.utc).timestamp() + int(AUTO_TEST_INTERVAL)
-        update_config()
-
+# Function to run a specific test provider
 def run_specific_test(provider):
     """Run a specific test provider and log results."""
+    print(f"[{datetime.now(timezone.utc).isoformat()}] Running test for provider: {provider}")
+    
     # Function to capture stdout during test run with retry logic
     def run_test_with_capture():
         import io
@@ -350,25 +319,111 @@ def run_specific_test(provider):
     try:
         result = run_test_with_capture()
         
-        # Update history
-        update_history(result, provider)
+        # Update history only if no error
+        if "error" not in result:
+            entry = update_history(result, provider)
+            if entry:
+                print(f"Test for {provider} completed successfully, added to history")
+            else:
+                print(f"Test for {provider} completed but not added to history")
+        else:
+            print(f"Test for {provider} failed: {result.get('error')}")
         
-        print(f"Scheduled speedtest for {provider} completed successfully")
         return result
     except Exception as e:
-        print(f"Error during scheduled speedtest for {provider}: {e}")
+        print(f"Exception during test for {provider}: {e}")
         return {"error": str(e)}
+
+# Updated API endpoint for sequential testing (old school)
+@app.route('/api/speedtest/schedule/run-now', methods=['POST'])
+def run_scheduled_test_now():
+    """API endpoint to run speed tests sequentially."""
+    
+    with config_lock:
+        local_run_both = RUN_BOTH_TESTS
+        local_provider = AUTO_TEST_PROVIDER
+    
+    print(f"[{datetime.now(timezone.utc).isoformat()}] Running test based on configuration")
+    
+    # Start a thread to handle the tests sequentially
+    thread = threading.Thread(
+        target=run_tests_sequentially,
+        args=(local_run_both, local_provider)
+    )
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        "success": True,
+        "message": "Test(s) scheduled to run sequentially"
+    })
+
+def run_tests_sequentially(run_both, provider):
+    """Run tests in a truly sequential manner."""
+    try:
+        if run_both:
+            # Run OpenSpeedTest first
+            print(f"[{datetime.now(timezone.utc).isoformat()}] Starting OpenSpeedTest...")
+            
+            # Register and run first test
+            register_active_test("openspeedtest")
+            ost_result = run_specific_test("openspeedtest")
+            unregister_active_test("openspeedtest")
+            
+            if "error" in ost_result:
+                print(f"OpenSpeedTest failed: {ost_result.get('error')}")
+            else:
+                print("OpenSpeedTest completed successfully")
+            
+            # Wait between tests - fixed 120 second delay as requested
+            print(f"[{datetime.now(timezone.utc).isoformat()}] Waiting 120 seconds before running SpeedSmart...")
+            time.sleep(120)  # Fixed 120 second delay
+            
+            # Run SpeedSmart next
+            print(f"[{datetime.now(timezone.utc).isoformat()}] Starting SpeedSmart...")
+            
+            # Register and run second test
+            register_active_test("speedsmart")
+            ss_result = run_specific_test("speedsmart")
+            unregister_active_test("speedsmart")
+            
+            if "error" in ss_result:
+                print(f"SpeedSmart failed: {ss_result.get('error')}")
+            else:
+                print("SpeedSmart completed successfully")
+            
+            print(f"[{datetime.now(timezone.utc).isoformat()}] All scheduled tests complete")
+        
+        else:
+            # Run a single test
+            print(f"[{datetime.now(timezone.utc).isoformat()}] Starting single test: {provider}")
+            
+            register_active_test(provider)
+            result = run_specific_test(provider)
+            unregister_active_test(provider)
+            
+            if "error" in result:
+                print(f"Test for {provider} failed: {result.get('error')}")
+            else:
+                print(f"Test for {provider} completed successfully")
+    
+    except Exception as e:
+        print(f"Exception in sequential test run: {e}")
+        # Clean up any active test markers
+        unregister_active_test("openspeedtest")
+        unregister_active_test("speedsmart")
 
 # Function to save/update configuration
 def update_config():
-    config = {
-        "autoTestEnabled": AUTO_TEST_ENABLED,
-        "autoTestInterval": int(AUTO_TEST_INTERVAL),
-        "autoTestProvider": AUTO_TEST_PROVIDER,
-        "runBothTests": RUN_BOTH_TESTS,
-        "delayBetweenTests": DELAY_BETWEEN_TESTS,
-        "nextScheduledTest": NEXT_SCHEDULED_TEST
-    }
+    """Save current configuration to file."""
+    with config_lock:
+        config = {
+            "autoTestEnabled": AUTO_TEST_ENABLED,
+            "autoTestInterval": int(AUTO_TEST_INTERVAL),
+            "autoTestProvider": AUTO_TEST_PROVIDER,
+            "runBothTests": RUN_BOTH_TESTS,
+            "delayBetweenTests": DELAY_BETWEEN_TESTS
+        }
     
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
@@ -379,61 +434,61 @@ def get_config():
     """API endpoint to retrieve configuration."""
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE, "r") as f:
-            return jsonify(json.load(f))
+            config = json.load(f)
+            return jsonify(config)
     else:
-        config = {
-            "autoTestEnabled": AUTO_TEST_ENABLED,
-            "autoTestInterval": int(AUTO_TEST_INTERVAL),
-            "autoTestProvider": AUTO_TEST_PROVIDER,
-            "runBothTests": RUN_BOTH_TESTS,
-            "delayBetweenTests": DELAY_BETWEEN_TESTS,
-            "nextScheduledTest": NEXT_SCHEDULED_TEST
-        }
+        with config_lock:
+            config = {
+                "autoTestEnabled": AUTO_TEST_ENABLED,
+                "autoTestInterval": int(AUTO_TEST_INTERVAL),
+                "autoTestProvider": AUTO_TEST_PROVIDER,
+                "runBothTests": RUN_BOTH_TESTS,
+                "delayBetweenTests": DELAY_BETWEEN_TESTS
+            }
+        
         return jsonify(config)
 
 # API endpoint to update configuration
 @app.route('/api/config', methods=['POST'])
 def update_config_api():
     """API endpoint to update configuration."""
-    global AUTO_TEST_ENABLED, AUTO_TEST_INTERVAL, AUTO_TEST_PROVIDER, NEXT_SCHEDULED_TEST, RUN_BOTH_TESTS, DELAY_BETWEEN_TESTS
+    global AUTO_TEST_ENABLED, AUTO_TEST_INTERVAL, AUTO_TEST_PROVIDER, RUN_BOTH_TESTS, DELAY_BETWEEN_TESTS
     
     data = request.json
     
-    if 'autoTestEnabled' in data:
-        AUTO_TEST_ENABLED = data['autoTestEnabled']
-    
-    if 'autoTestInterval' in data:
-        AUTO_TEST_INTERVAL = str(data['autoTestInterval'])
-    
-    if 'autoTestProvider' in data:
-        AUTO_TEST_PROVIDER = data['autoTestProvider']
-        RUN_BOTH_TESTS = AUTO_TEST_PROVIDER.lower() == 'both'
-    
-    if 'delayBetweenTests' in data:
-        DELAY_BETWEEN_TESTS = data['delayBetweenTests']
-    
-    # Reschedule if needed
-    if AUTO_TEST_ENABLED:
-        NEXT_SCHEDULED_TEST = datetime.now(timezone.utc).timestamp() + int(AUTO_TEST_INTERVAL)
-    else:
-        NEXT_SCHEDULED_TEST = None
+    with config_lock:
+        if 'autoTestEnabled' in data:
+            AUTO_TEST_ENABLED = data['autoTestEnabled']
+        
+        if 'autoTestInterval' in data:
+            AUTO_TEST_INTERVAL = str(data['autoTestInterval'])
+        
+        if 'autoTestProvider' in data:
+            AUTO_TEST_PROVIDER = data['autoTestProvider']
+            RUN_BOTH_TESTS = AUTO_TEST_PROVIDER.lower() == 'both'
+        
+        if 'delayBetweenTests' in data:
+            DELAY_BETWEEN_TESTS = data['delayBetweenTests']
     
     # Update config file
     update_config()
     
     return jsonify({"success": True, "message": "Configuration updated"})
 
-# Background thread for scheduling
-def scheduler_thread():
-    """Background thread for running scheduled tests."""
-    while True:
-        if AUTO_TEST_ENABLED and NEXT_SCHEDULED_TEST:
-            current_time = datetime.now(timezone.utc).timestamp()
-            if current_time >= NEXT_SCHEDULED_TEST:
-                run_scheduled_speedtest()
-        
-        # Check every minute
-        time.sleep(60)
+@app.route('/api/scheduler/status', methods=['GET'])
+def get_scheduler_status():
+    """Get the current status of the scheduler and active tests."""
+    active = get_active_tests()
+    
+    status = {
+        "autoTestEnabled": AUTO_TEST_ENABLED,
+        "activeTests": active,
+        "hasActiveTests": len(active) > 0,
+        "currentTime": datetime.now(timezone.utc).isoformat(),
+        "currentTimestamp": datetime.now(timezone.utc).timestamp()
+    }
+    
+    return jsonify(status)
 
 if __name__ == '__main__':
     # Make sure the index.html file exists in the static folder
@@ -446,13 +501,10 @@ if __name__ == '__main__':
         with open(index_file, "w") as f:
             f.write("<meta http-equiv='refresh' content='0;url=/static/dashboard.html'>")
     
-    # Initialize configuration and next scheduled test
-    if AUTO_TEST_ENABLED:
-        NEXT_SCHEDULED_TEST = datetime.now(timezone.utc).timestamp() + int(AUTO_TEST_INTERVAL)
+    # Initialize configuration
     update_config()
     
-    # Start scheduler in background thread
-    scheduler = threading.Thread(target=scheduler_thread, daemon=True)
-    scheduler.start()
-    
-    app.run(host='0.0.0.0', port=3667)
+    try:
+        app.run(host='0.0.0.0', port=3667)
+    except KeyboardInterrupt:
+        print("Shutting down application...")
